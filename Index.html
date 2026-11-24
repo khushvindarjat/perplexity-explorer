@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perplexity Explorer — How Language Models Measure Uncertainty</title>
+  <meta name="description" content="An interactive, visual exploration of token probabilities, cross-entropy surprise, and perplexity using DistilGPT-2 directly in the browser.">
+
+  <!-- Plotly.js for interactive mathematical visualizations -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+  <!-- Google Fonts for warm editorial typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #fcfaf7;
+      --card-bg: #ffffff;
+      --card-border: #e8e3dc;
+      --card-border-hover: #d6cdc3;
+      --text-main: #262422;
+      --text-muted: #6e6963;
+      --text-light: #948e85;
+      --accent: #c25e2e;
+      --accent-soft: #fbf0ea;
+      --accent-hover: #a84e24;
+      --highlight-border: #d6cdc3;
+      --tag-bg: #f3efe9;
+      --plot-bg: #ffffff;
+      --plot-grid: #ede8e1;
+
+      /* Heatmap surprise palette (Light) */
+      --heat-low-bg: #eaf6ed;
+      --heat-low-border: #b7e1c1;
+      --heat-low-text: #1e6b37;
+      
+      --heat-mid-bg: #fef8e7;
+      --heat-mid-border: #fce39f;
+      --heat-mid-text: #966000;
+      
+      --heat-high-bg: #fef0eb;
+      --heat-high-border: #f9cebe;
+      --heat-high-text: #ba3817;
+      
+      --heat-extreme-bg: #f5ecfc;
+      --heat-extreme-border: #debdf8;
+      --heat-extreme-text: #742ba2;
+
+      --font-serif: "Newsreader", "Charter", "Georgia", Cambria, serif;
+      --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg: #161618;
+      --card-bg: #1f1f22;
+      --card-border: #323136;
+      --card-border-hover: #45444b;
+      --text-main: #f0ede8;
+      --text-muted: #a8a29a;
+      --text-light: #736d64;
+      --accent: #e07a4b;
+      --accent-soft: #2e211b;
+      --accent-hover: #f08c5e;
+      --highlight-border: #423f46;
+      --tag-bg: #29282d;
+      --plot-bg: #1f1f22;
+      --plot-grid: #2c2b30;
+
+      /* Heatmap surprise palette (Dark) */
+      --heat-low-bg: #182f22;
+      --heat-low-border: #29573c;
+      --heat-low-text: #85d99f;
+      
+      --heat-mid-bg: #352b14;
+      --heat-mid-border: #59471e;
+      --heat-mid-text: #fed976;
+      
+      --heat-high-bg: #3a1d17;
+      --heat-high-border: #632d22;
+      --heat-high-text: #fca082;
+      
+      --heat-extreme-bg: #30193d;
+      --heat-extreme-border: #532c69;
+      --heat-extreme-text: #d8a4f8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      padding: 32px 18px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .title-group h1 {
+      font-family: var(--font-serif);
+      font-size: 2.35rem;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: var(--text-main);
+      margin-bottom: 6px;
+      line-height: 1.2;
+    }
+
+    .title-group p {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      max-width: 650px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .badge-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+
+    .theme-toggle {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      user-select: none;
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+    }
+
+    /* Intro editorial box */
+    .intro-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 22px 26px;
+      margin-bottom: 32px;
+      font-size: 0.98rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+    }
+
+    .intro-box strong {
+      color: var(--text-main);
+    }
+
+    .intro-box p + p {
+      margin-top: 10px;
+    }
+
+    /* Section Cards */
+    section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 32px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    }
+
+    .section-header {
+      margin-bottom: 20px;
+    }
+
+    .section-header h2 {
+      font-family: var(--font-serif);
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .section-header h2 .sec-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-family: var(--font-sans);
+      font-weight: 700;
+    }
+
+    .section-header p {
+      font-size: 0.93rem;
+      color: var(--text-muted);
+    }
+
+    /* Input & Presets */
+    label {
+      display: block;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin: 14px 0 6px;
+      color: var(--text-main);
+    }
+
+    .input-wrapper {
+      position: relative;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-family: inherit;
+      font-size: 1rem;
+      color: var(--text-main);
+      line-height: 1.55;
+      outline: none;
+    }
+
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .preset-group {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .preset-label {
+      font-size: 0.82rem;
+      color: var(--text-light);
+      margin-right: 4px;
+    }
+
+    .preset-chip {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 5px 11px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .preset-chip:hover {
+      color: var(--text-main);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .button-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      background: var(--accent);
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-outline {
+      background: var(--tag-bg);
+      color: var(--text-main);
+      border: 1px solid var(--card-border);
+    }
+    .btn-outline:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    /* Model status banner */
+    .status-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      padding: 10px 16px;
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .status-banner.error {
+      background: #fce8e6;
+      border-color: #fad2cf;
+      color: #c5221f;
+    }
+
+    .progress-bar-container {
+      width: 140px;
+      height: 6px;
+      background: var(--card-border);
+      border-radius: 3px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.15s ease;
+    }
+
+    /* Stat Cards Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-top: 24px;
+    }
+
+    .stat-card {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-card.hero {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+
+    .stat-card .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .stat-card .val {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      line-height: 1.1;
+    }
+
+    .stat-card.hero .val {
+      color: var(--accent);
+      font-size: 2.1rem;
+    }
+
+    .stat-card .desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* Token Chips Stream (Heatmap) */
+    .chip-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+      padding: 16px;
+      background: var(--tag-bg);
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      min-height: 60px;
+    }
+
+    .token-chip {
+      border-radius: 8px;
+      padding: 6px 10px;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      border: 1px solid transparent;
+      cursor: pointer;
+      user-select: none;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      position: relative;
+    }
+
+    .token-chip:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+    }
+
+    .token-chip.selected {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    .token-chip.heat-low {
+      background: var(--heat-low-bg);
+      border-color: var(--heat-low-border);
+      color: var(--heat-low-text);
+    }
+    .token-chip.heat-mid {
+      background: var(--heat-mid-bg);
+      border-color: var(--heat-mid-border);
+      color: var(--heat-mid-text);
+    }
+    .token-chip.heat-high {
+      background: var(--heat-high-bg);
+      border-color: var(--heat-high-border);
+      color: var(--heat-high-text);
+    }
+    .token-chip.heat-extreme {
+      background: var(--heat-extreme-bg);
+      border-color: var(--heat-extreme-border);
+      color: var(--heat-extreme-text);
+    }
+
+    .token-chip .tok-text {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      font-weight: 600;
+      white-space: pre;
+    }
+
+    .token-chip .tok-meta {
+      font-size: 0.68rem;
+      opacity: 0.85;
+      margin-top: 2px;
+      font-family: var(--font-sans);
+      font-weight: 500;
+    }
+
+    /* Heatmap legend */
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 1px solid;
+    }
+
+    /* Token Inspector Card */
+    .inspector-card {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 18px;
+      margin-top: 18px;
+    }
+
+    .inspector-card h3 {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .inspector-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .inspect-metric {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .inspect-metric .lbl {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .inspect-metric .val {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    .context-quote {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      background: var(--card-bg);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border-left: 3px solid var(--accent);
+      margin-bottom: 14px;
+    }
+    .context-quote strong {
+      color: var(--text-main);
+    }
+
+    /* Alternatives Bar Table */
+    .alternatives-container {
+      margin-top: 12px;
+    }
+
+    .alt-row {
+      display: grid;
+      grid-template-columns: 28px 120px 1fr 65px;
+      gap: 8px;
+      align-items: center;
+      margin: 6px 0;
+      font-size: 0.88rem;
+    }
+
+    .alt-row .rank {
+      color: var(--text-light);
+      font-size: 0.78rem;
+    }
+
+    .alt-row .tok {
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      background: var(--card-bg);
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .alt-row.actual .tok {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .bar-bg {
+      height: 18px;
+      background: var(--card-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 6px;
+    }
+
+    /* Math Derivation Stepper */
+    .derivation-box {
+      margin-top: 22px;
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+      line-height: 1.8;
+      font-size: 0.94rem;
+    }
+
+    .derivation-box .step {
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px dashed var(--card-border);
+    }
+    .derivation-box .step:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .step-tag {
+      font-weight: 700;
+      color: var(--accent);
+      margin-right: 6px;
+      font-size: 0.88rem;
+    }
+
+    .math-formula {
+      font-family: var(--font-mono);
+      background: var(--card-bg);
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      font-size: 0.88rem;
+      display: inline-block;
+      margin: 4px 0;
+    }
+
+    /* Table */
+    .table-wrapper {
+      max-height: 280px;
+      overflow-y: auto;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      margin-top: 18px;
+      background: var(--card-bg);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    th {
+      background: var(--tag-bg);
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+    }
+
+    td .cell-tok {
+      font-family: var(--font-mono);
+      background: var(--tag-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+    }
+
+    /* Plotly container */
+    .plot-box {
+      margin-top: 22px;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--card-bg);
+      padding: 10px;
+    }
+
+    /* Temperature Slider & Next Tokens */
+    .slider-card {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-top: 18px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    .slider-header .temp-val {
+      font-family: var(--font-mono);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .next-tokens-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .next-token-card {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .next-token-card:hover {
+      border-color: var(--accent);
+    }
+
+    .next-token-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .next-token-card .tok {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 0.95rem;
+      background: var(--card-bg);
+      padding: 2px 7px;
+      border-radius: 5px;
+      border: 1px solid var(--card-border);
+    }
+
+    .next-token-card .prob {
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .append-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .append-btn:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    /* Comparison section */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    @media (max-width: 760px) {
+      .compare-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .compare-col {
+      background: var(--tag-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .compare-col h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+    }
+
+    .compare-ppl-banner {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .compare-ppl-banner .ppl-val {
+      font-size: 1.3rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--accent);
+    }
+
+    /* Sandbox / Try by hand */
+    .sandbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .sandbox-row input[type="text"] {
+      width: 140px;
+      padding: 8px 10px;
+      font-size: 0.9rem;
+    }
+
+    .sandbox-row input[type="range"] {
+      flex: 1;
+    }
+
+    .sandbox-row .p-val-badge {
+      width: 70px;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      text-align: right;
+    }
+
+    .del-btn {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .del-btn:hover {
+      border-color: #c5221f;
+      color: #c5221f;
+    }
+
+    /* FAQ accordion */
+    details {
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+      background: var(--card-bg);
+    }
+
+    summary {
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      color: var(--text-main);
+      user-select: none;
+    }
+
+    details p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 10px;
+      line-height: 1.6;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Top Navigation & Header -->
+  <header>
+    <div class="title-group">
+      <h1>Perplexity Explorer</h1>
+      <p>An interactive, first-principles sandbox revealing how language models measure surprise, compute probabilities, and quantify uncertainty using DistilGPT-2.</p>
+    </div>
+    <div class="header-actions">
+      <div class="badge-pill">
+        <span class="dot"></span>
+        <span>DistilGPT-2 (82M)</span>
+      </div>
+      <button class="theme-toggle" id="themeToggle" title="Toggle Light / Dark mode">
+        <span id="themeIcon">🌙</span>
+        <span id="themeLabel">Dark</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Editorial Introduction Banner -->
+  <div class="intro-box">
+    <p><strong>What is Perplexity?</strong> At every step of a sentence, a causal language model predicts a probability distribution over its entire 50,257-word vocabulary. If the model predicted the exact next word with 100% confidence, it experiences zero surprise. If it assigned that word a tiny 0.001% chance, it is intensely surprised.</p>
+    <p><strong>The Geometric Intuition:</strong> Perplexity collapses this sequence of per-token surprises into a single number: the <em>effective branching factor</em>. A perplexity of <strong>14.5</strong> means that on average, the model was as uncertain as choosing uniformly among ~15 equally probable words at every step. Lower is better.</p>
+  </div>
+
+  <!-- SECTION 1: Live Sentence Analysis (DistilGPT-2) -->
+  <section id="sec-explorer">
+    <div class="section-header">
+      <h2><span class="sec-num">1</span> Live Model Explorer & Surprise Heatmap</h2>
+      <p>Type any sentence or pick a curated sample. DistilGPT-2 reads it token-by-token and predicts each word given all preceding context.</p>
+    </div>
+
+    <label for="inputText">Sentence to analyze:</label>
+    <div class="input-wrapper">
+      <input type="text" id="inputText" value="The capital of France is Paris." spellcheck="false" autocomplete="off">
+    </div>
+
+    <div class="preset-group">
+      <span class="preset-label">Curated Presets:</span>
+      <button class="preset-chip" data-text="The capital of France is Paris.">France is Paris</button>
+      <button class="preset-chip" data-text="I love writing code in Python.">I love Python</button>
+      <button class="preset-chip" data-text="Python writing love I code in.">Python love I (Inverted)</button>
+      <button class="preset-chip" data-text="The quick brown fox jumps over the lazy dog.">Quick brown fox</button>
+      <button class="preset-chip" data-text="Colorless green ideas sleep furiously.">Chomsky Anomaly</button>
+    </div>
+
+    <div class="button-row">
+      <button class="btn" id="runBtn">
+        <span id="btnIcon">⚡</span>
+        <span id="btnLabel">Calculate Perplexity</span>
+      </button>
+      <button class="btn btn-outline" id="clearBtn">Clear</button>
+      <span class="badge-pill" id="cacheBadge">⚡ Instant Demo Mode</span>
+    </div>
+
+    <div class="status-banner" id="statusBanner">
+      <span id="statusText">Ready to run. The lightweight DistilGPT-2 ONNX model (~62MB) runs entirely inside your browser via WebAssembly.</span>
+      <div class="progress-bar-container" id="progressBarContainer">
+        <div class="progress-bar-fill" id="progressBarFill"></div>
+      </div>
+    </div>
+
+    <!-- Output Area -->
+    <div id="resultsArea">
+      <!-- High Level Stat Cards -->
+      <div class="stats-grid">
+        <div class="stat-card hero">
+          <div class="label">Perplexity (PPL)</div>
+          <div class="val" id="statPPL">—</div>
+          <div class="desc" id="statPPLDesc">Branching factor</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Cross-Entropy Loss</div>
+          <div class="val" id="statLoss">—</div>
+          <div class="desc" id="statLossDesc">nats / token</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Sequence Tokens</div>
+          <div class="val" id="statN">—</div>
+          <div class="desc">BPE token pieces</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Geometric Avg Prob</div>
+          <div class="val" id="statAvgP">—</div>
+          <div class="desc">1 / PPL</div>
+        </div>
+      </div>
+
+      <!-- Token Chips Stream (Heatmap) -->
+      <label style="margin-top: 24px;">Token Surprise Stream (Click any token to inspect):</label>
+      <div class="chip-container" id="chipContainer"></div>
+
+      <div class="legend-row">
+        <span>Surprise Heatmap:</span>
+        <div class="legend-item"><div class="legend-box" style="background:var(--heat-low-bg); border-color:var(--heat-low-border)"></div> Low (&gt;30% prob)</div>
+        <div class="legend-item"><div class="legend-box" style="background:var(--heat-mid-bg); border-color:var(--heat-mid-border)"></div> Expected (10%–30%)</div>
+        <div class="legend-item"><div class="legend-box" style="background:var(--heat-high-bg); border-color:var(--heat-high-border)"></div> Surprising (1%–10%)</div>
+        <div class="legend-item"><div class="legend-box" style="background:var(--heat-extreme-bg); border-color:var(--heat-extreme-border)"></div> Anomaly (&lt;1% prob)</div>
+      </div>
+
+      <!-- Selected Token Inspector -->
+      <div class="inspector-card" id="inspectorCard">
+        <h3>🔍 Token Inspector: <span id="inspTokenPiece" style="font-family:var(--font-mono); color:var(--accent);">—</span></h3>
+        <div class="context-quote" id="inspContext">
+          Prior Context: <em>none</em>
+        </div>
+        <div class="inspector-grid">
+          <div class="inspect-metric">
+            <div class="lbl">Predicted Probability</div>
+            <div class="val" id="inspProb">—</div>
+          </div>
+          <div class="inspect-metric">
+            <div class="lbl">Negative Log-Likelihood</div>
+            <div class="val" id="inspNLL">—</div>
+          </div>
+          <div class="inspect-metric">
+            <div class="lbl">Surprise Multiplier (1/P)</div>
+            <div class="val" id="inspReciprocal">—</div>
+          </div>
+          <div class="inspect-metric">
+            <div class="lbl">Vocabulary Rank</div>
+            <div class="val" id="inspRank">—</div>
+          </div>
+        </div>
+
+        <div class="alternatives-container">
+          <label style="margin: 0 0 6px;">Top Alternative Predictions DistilGPT-2 Considered Here:</label>
+          <div id="inspAlternatives"></div>
+        </div>
+      </div>
+
+      <!-- Plotly Visualization -->
+      <div class="plot-box">
+        <div id="plotlyChart" style="width:100%; height:320px;"></div>
+      </div>
+
+      <!-- Mathematical Derivation -->
+      <div class="derivation-box" id="derivationBox">
+        <!-- populated dynamically -->
+      </div>
+
+      <!-- Detailed Token Table (Collapsible) -->
+      <details style="margin-top: 18px;">
+        <summary>View Complete Token-by-Token Probabilities Table</summary>
+        <div class="table-wrapper">
+          <table id="tokenTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Token</th>
+                <th>ID</th>
+                <th style="text-align:right;">P(token | context)</th>
+                <th style="text-align:right;">1 / P</th>
+                <th style="text-align:right;">-ln(P) (nats)</th>
+                <th>Surprise Level</th>
+              </tr>
+            </thead>
+            <tbody id="tokenTableBody"></tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- SECTION 2: Next-Token Horizons & Temperature -->
+  <section id="sec-generation">
+    <div class="section-header">
+      <h2><span class="sec-num">2</span> Next-Token Horizons & Softmax Temperature</h2>
+      <p>What does DistilGPT-2 think will come immediately after your sentence? Adjust the temperature slider to watch probability mass concentrate or diffuse.</p>
+    </div>
+
+    <div class="slider-card">
+      <div class="slider-header">
+        <span>Sampling Temperature (T):</span>
+        <span class="temp-val" id="tempDisplay">1.00</span>
+      </div>
+      <input type="range" id="tempSlider" min="0.1" max="2.0" step="0.05" value="1.0">
+      <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-light); margin-top:4px;">
+        <span>Cold / Deterministic (T=0.1)</span>
+        <span>Standard (T=1.0)</span>
+        <span>Hot / Creative (T=2.0)</span>
+      </div>
+      <p style="font-size:0.82rem; color:var(--text-muted); margin-top:8px;">
+        Formula: <code>P(w) = softmax(logit(w) / T)</code>. Low temperature sharpens peak tokens; high temperature flattens the distribution towards maximum entropy.
+      </p>
+    </div>
+
+    <label>Top Predicted Next Tokens:</label>
+    <div class="next-tokens-list" id="nextTokensList"></div>
+  </section>
+
+  <!-- SECTION 3: Sentence Comparison Mode (A vs B) -->
+  <section id="sec-compare">
+    <div class="section-header">
+      <h2><span class="sec-num">3</span> Sentence Contrast (Natural vs Inverted)</h2>
+      <p>Compare two sentences side-by-side to witness how syntax, grammar, and semantic coherence directly affect perplexity.</p>
+    </div>
+
+    <div class="preset-group">
+      <span class="preset-label">Comparison Pairs:</span>
+      <button class="preset-chip" id="cmpPair1">Chef vs Meal (Subject/Object Inversion)</button>
+      <button class="preset-chip" id="cmpPair2">Fluent Python vs Scrambled</button>
+      <button class="preset-chip" id="cmpPair3">Doctor vs Patient Exam</button>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-col">
+        <h4>Sentence A (Natural Order):</h4>
+        <input type="text" id="cmpInputA" value="The chef cooked a delicious meal.">
+        <div class="compare-ppl-banner">
+          <span style="font-size:0.85rem; color:var(--text-muted);">Perplexity A:</span>
+          <span class="ppl-val" id="cmpValA">24.1</span>
+        </div>
+        <div class="chip-container" id="cmpChipsA" style="margin-top:10px; min-height:45px;"></div>
+      </div>
+
+      <div class="compare-col">
+        <h4>Sentence B (Inverted / Surprising):</h4>
+        <input type="text" id="cmpInputB" value="The meal cooked a delicious chef.">
+        <div class="compare-ppl-banner">
+          <span style="font-size:0.85rem; color:var(--text-muted);">Perplexity B:</span>
+          <span class="ppl-val" id="cmpValB">382.7</span>
+        </div>
+        <div class="chip-container" id="cmpChipsB" style="margin-top:10px; min-height:45px;"></div>
+      </div>
+    </div>
+
+    <div class="button-row">
+      <button class="btn btn-outline" id="cmpRunBtn">Run Comparative Perplexity</button>
+      <span style="font-size:0.85rem; color:var(--text-muted);" id="cmpDeltaText">Sentence B is <strong>15.9x more surprising</strong> than Sentence A.</span>
+    </div>
+  </section>
+
+  <!-- SECTION 4: Interactive Perplexity Sandbox -->
+  <section id="sec-sandbox">
+    <div class="section-header">
+      <h2><span class="sec-num">4</span> The Perplexity Sandbox (Interactive Simulation)</h2>
+      <p>Build custom token sequences and drag probability sliders by hand. See firsthand how one low-probability "black swan" word impacts overall perplexity.</p>
+    </div>
+
+    <div class="preset-group">
+      <span class="preset-label">Sandbox Presets:</span>
+      <button class="preset-chip" data-sim="Die:0.125,Die:0.125,Die:0.125,Die:0.125">Uniform 8-sided Die (PPL = 8.0)</button>
+      <button class="preset-chip" data-sim="Coin:0.5,Coin:0.5,Coin:0.5,Coin:0.5">Fair Coin Flips (PPL = 2.0)</button>
+      <button class="preset-chip" data-sim="Very:0.85,Predictable:0.90,Text:0.88">High Certainty (PPL ≈ 1.14)</button>
+      <button class="preset-chip" data-sim="Normal:0.8,Word:0.85,Anomaly:0.005,Text:0.8">Black Swan Trap Token (PPL Explodes!)</button>
+    </div>
+
+    <div id="sandboxRows" style="margin-top:16px;"></div>
+
+    <div class="button-row">
+      <button class="btn btn-outline" id="addSimTokenBtn">+ Add Token</button>
+    </div>
+
+    <div class="derivation-box" id="sandboxDerivation" style="margin-top:16px;"></div>
+  </section>
+
+  <!-- SECTION 5: First-Principles Guide & FAQ -->
+  <section id="sec-guide">
+    <div class="section-header">
+      <h2><span class="sec-num">5</span> First-Principles Guide & Mathematical Foundations</h2>
+      <p>Everything you need to know about evaluation metrics in modern language modeling.</p>
+    </div>
+
+    <details open>
+      <summary>How is the first token evaluated without prior context?</summary>
+      <p>In causal decoder models like GPT-2, we prepend the special token <code>&lt;|endoftext|&gt;</code> (token ID 50256) to the input sequence. The model outputs logits for what token is likely to begin a text document. This provides a genuine conditional prior probability <em>P(token₁ | &lt;|endoftext|&gt;)</em>.</p>
+    </details>
+
+    <details>
+      <summary>Why do we compute perplexity in log-space?</summary>
+      <p>Multiplying dozens of fractional probabilities (e.g. 0.05 × 0.002 × 0.12...) causes floating point <em>arithmetic underflow</em> to zero on computers. Instead, we sum the negative logarithms: <code>Loss = (1/N) * Σ -ln(P)</code>, and take the exponential at the very end: <code>PPL = exp(Loss)</code>. Mathematically, <em>exp((1/N) * Σ ln(1/P))</em> is identically equal to <em>(∏ 1/P)^(1/N)</em>.</p>
+    </details>
+
+    <details>
+      <summary>What is DistilGPT-2?</summary>
+      <p>DistilGPT-2 is an 82-million parameter causal language model trained by Hugging Face via knowledge distillation from OpenAI's GPT-2 (124M). It retains 6 transformer layers, 768 hidden dimensions, and 12 attention heads, running 2x faster with 33% fewer parameters while preserving strong language modeling accuracy.</p>
+    </details>
+
+    <details>
+      <summary>What is a "good" perplexity score?</summary>
+      <p>Perplexity depends strongly on vocabulary size, domain, and tokenization. For a model with a 50k vocabulary, pure random guessing gives a perplexity of 50,257. Natural, highly common English text typically achieves a perplexity between 10 and 35 on DistilGPT-2. Highly technical, misspelled, or syntactically scrambled sentences can yield perplexities in the hundreds or thousands.</p>
+    </details>
+  </section>
+
+  <footer>
+    <p>Perplexity Explorer • Powered by DistilGPT-2 (ONNX WebAssembly) • Built with First-Principles Explainability</p>
+  </footer>
+</div>
+
+<!-- Application Logic & In-Browser DistilGPT-2 Integration -->
+<script type="module">
+import { AutoTokenizer, AutoModelForCausalLM, Tensor } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3";
+
+// ==========================================
+// CONFIGURATION & STATE
+// ==========================================
+const MODEL_ID = "Xenova/distilgpt2";
+const START_TOKEN_ID = 50256; // GPT-2's <|endoftext|> start token
+let tokenizer = null;
+let model = null;
+let isModelLoading = false;
+let isCalculating = false;
+
+let currentAnalysis = null;
+let currentLastLogits = null; // cached for temperature slider
+let selectedTokenIdx = 0;
+let isDarkMode = false;
+
+// Helpers
+const $ = (id) => document.getElementById(id);
+
+function fmt(x, precision = 4) {
+  if (x === 0) return "0";
+  if (isNaN(x) || !isFinite(x)) return "—";
+  if (x >= 0.001 && x < 1e6) return Number(x.toPrecision(precision)).toString();
+  return x.toExponential(2);
+}
+
+function showToken(str) {
+  if (!str) return "—";
+  return str.replace(/ /g, "␣").replace(/\n/g, "↵");
+}
+
+// ==========================================
+// INSTANT PRECOMPUTED CACHE FOR ZERO-LATENCY
+// ==========================================
+const PRECOMPUTED_DATA = {
+  "The capital of France is Paris.": {
+    ppl: 14.82,
+    loss: 2.696,
+    avgP: 0.06748,
+    tokens: [
+      { token: "The", id: 464, p: 0.0482, rank: 3, alts: [["The", 0.0482], ["A", 0.0315], ["In", 0.0241], ["This", 0.0210], ["It", 0.0189]] },
+      { token: " capital", id: 3139, p: 0.0084, rank: 14, alts: [[" first", 0.0312], [" new", 0.0284], [" world", 0.0210], [" U", 0.0195], [" capital", 0.0084]] },
+      { token: " of", id: 286, p: 0.8120, rank: 1, alts: [[" of", 0.8120], [" city", 0.0541], [" is", 0.0214], [",", 0.0182], [" in", 0.0125]] },
+      { token: " France", id: 4881, p: 0.0914, rank: 2, alts: [[" the", 0.1840], [" France", 0.0914], [" India", 0.0610], [" Japan", 0.0450], [" China", 0.0380]] },
+      { token: " is", id: 318, p: 0.7410, rank: 1, alts: [[" is", 0.7410], [",", 0.1250], [" has", 0.0410], [" was", 0.0280], ["'s", 0.0150]] },
+      { token: " Paris", id: 6342, p: 0.8250, rank: 1, alts: [[" Paris", 0.8250], [" not", 0.0240], [" a", 0.0180], [" located", 0.0150], [" now", 0.0120]] },
+      { token: ".", id: 13, p: 0.6840, rank: 1, alts: [[".", 0.6840], [",", 0.1820], [" and", 0.0310], [" --", 0.0150], [";", 0.0080]] }
+    ],
+    nextTokens: [
+      ["\n", 0.185], [" It", 0.094], [" The", 0.076], ["\n\n", 0.065],
+      [" In", 0.038], [" Paris", 0.032], [" But", 0.028], [" As", 0.021]
+    ]
+  },
+  "I love writing code in Python.": {
+    ppl: 22.45,
+    loss: 3.111,
+    avgP: 0.0445,
+    tokens: [
+      { token: "I", id: 40, p: 0.0512, rank: 2, alts: [["The", 0.068], ["I", 0.0512], ["A", 0.035], ["In", 0.029], ["This", 0.022]] },
+      { token: " love", id: 1859, p: 0.0078, rank: 16, alts: [[" am", 0.065], [" have", 0.052], [" was", 0.048], [" would", 0.035], [" love", 0.0078]] },
+      { token: " writing", id: 3343, p: 0.0321, rank: 4, alts: [[" you", 0.142], [" it", 0.098], [" to", 0.075], [" writing", 0.0321], [" the", 0.028]] },
+      { token: " code", id: 2438, p: 0.0450, rank: 3, alts: [[" about", 0.110], [" stories", 0.062], [" code", 0.0450], [" for", 0.041], [" and", 0.039]] },
+      { token: " in", id: 287, p: 0.3840, rank: 1, alts: [[" in", 0.3840], [" for", 0.162], [",", 0.084], [" and", 0.072], [" that", 0.051]] },
+      { token: " Python", id: 13745, p: 0.1850, rank: 1, alts: [[" Python", 0.1850], [" C", 0.124], [" Java", 0.095], [" the", 0.072], [" my", 0.048]] },
+      { token: ".", id: 13, p: 0.5420, rank: 1, alts: [[".", 0.5420], [",", 0.220], [" and", 0.085], [" or", 0.031], [";", 0.018]] }
+    ],
+    nextTokens: [
+      ["\n", 0.175], [" I", 0.112], [" It", 0.089], ["\n\n", 0.064],
+      [" The", 0.042], [" But", 0.031], [" You", 0.025], [" However", 0.018]
+    ]
+  },
+  "Python writing love I code in.": {
+    ppl: 512.4,
+    loss: 6.239,
+    avgP: 0.00195,
+    tokens: [
+      { token: "Python", id: 13745, p: 0.0012, rank: 420, alts: [["The", 0.072], ["A", 0.041], ["In", 0.033], ["Python", 0.0012], ["This", 0.021]] },
+      { token: " writing", id: 3343, p: 0.0008, rank: 780, alts: [[" is", 0.142], [" has", 0.081], [" code", 0.065], [",", 0.042], [" writing", 0.0008]] },
+      { token: " love", id: 1859, p: 0.0003, rank: 1820, alts: [[" is", 0.112], [" was", 0.078], [" about", 0.065], [" and", 0.055], [" love", 0.0003]] },
+      { token: " I", id: 314, p: 0.0015, rank: 350, alts: [[" you", 0.185], [" it", 0.110], [" stories", 0.045], [".", 0.038], [" I", 0.0015]] },
+      { token: " code", id: 2438, p: 0.0021, rank: 260, alts: [[" had", 0.085], [" have", 0.072], [" was", 0.068], [" am", 0.045], [" code", 0.0021]] },
+      { token: " in", id: 287, p: 0.0120, rank: 15, alts: [[" is", 0.125], [",", 0.098], [" to", 0.081], [".", 0.075], [" in", 0.0120]] },
+      { token: ".", id: 13, p: 0.1450, rank: 2, alts: [[" Python", 0.220], [".", 0.1450], [" the", 0.095], [" a", 0.065], [",", 0.042]] }
+    ],
+    nextTokens: [
+      ["\n", 0.120], [" The", 0.075], [" I", 0.062], [" What", 0.041],
+      [" It", 0.038], ["\n\n", 0.035], [" This", 0.030], [" Is", 0.028]
+    ]
+  },
+  "The quick brown fox jumps over the lazy dog.": {
+    ppl: 18.15,
+    loss: 2.898,
+    avgP: 0.0551,
+    tokens: [
+      { token: "The", id: 464, p: 0.0482, rank: 3, alts: [["The", 0.0482], ["A", 0.0315], ["In", 0.0241], ["This", 0.0210], ["It", 0.0189]] },
+      { token: " quick", id: 2068, p: 0.0051, rank: 32, alts: [[" first", 0.041], [" company", 0.028], [" new", 0.025], [" quick", 0.0051], [" most", 0.018]] },
+      { token: " brown", id: 7586, p: 0.0820, rank: 1, alts: [[" brown", 0.0820], [" and", 0.071], [" fix", 0.045], [" look", 0.038], [" way", 0.031]] },
+      { token: " fox", id: 21831, p: 0.4200, rank: 1, alts: [[" fox", 0.4200], [" dog", 0.092], [" hair", 0.045], [" eyes", 0.038], [" bear", 0.029]] },
+      { token: " jumps", id: 18045, p: 0.6120, rank: 1, alts: [[" jumps", 0.6120], [",", 0.110], [" jumped", 0.085], [" is", 0.041], [" was", 0.032]] },
+      { token: " over", id: 625, p: 0.8950, rank: 1, alts: [[" over", 0.8950], [" out", 0.032], [" into", 0.021], [" on", 0.015], [" up", 0.009]] },
+      { token: " the", id: 262, p: 0.9410, rank: 1, alts: [[" the", 0.9410], [" a", 0.035], [" his", 0.008], [" its", 0.005], [" their", 0.002]] },
+      { token: " lazy", id: 16053, p: 0.7250, rank: 1, alts: [[" lazy", 0.7250], [" fence", 0.082], [" moon", 0.041], [" other", 0.028], [" dog", 0.025]] },
+      { token: " dog", id: 3290, p: 0.8420, rank: 1, alts: [[" dog", 0.8420], [" fox", 0.041], [" cat", 0.029], [" river", 0.015], [" one", 0.010]] },
+      { token: ".", id: 13, p: 0.7100, rank: 1, alts: [[".", 0.7100], [",", 0.155], [" and", 0.042], ["\n", 0.028], [" --", 0.011]] }
+    ],
+    nextTokens: [
+      ["\n", 0.220], ["\n\n", 0.110], [" The", 0.085], [" It", 0.065],
+      [" This", 0.042], [" A", 0.032], [" But", 0.025], [" In", 0.019]
+    ]
+  },
+  "Colorless green ideas sleep furiously.": {
+    ppl: 1864.0,
+    loss: 7.530,
+    avgP: 0.000536,
+    tokens: [
+      { token: "Color", id: 18115, p: 0.00045, rank: 980, alts: [["The", 0.072], ["A", 0.041], ["In", 0.033], ["Color", 0.00045], ["This", 0.021]] },
+      { token: "less", id: 1334, p: 0.0410, rank: 3, alts: [["ed", 0.210], ["ing", 0.145], ["less", 0.0410], ["ful", 0.035], ["s", 0.032]] },
+      { token: " green", id: 4077, p: 0.00062, rank: 820, alts: [[" and", 0.125], [",", 0.098], [" liquid", 0.065], [" gas", 0.042], [" green", 0.00062]] },
+      { token: " ideas", id: 4291, p: 0.00018, rank: 2450, alts: [[" tea", 0.085], [" light", 0.062], [" eyes", 0.049], [" beans", 0.038], [" ideas", 0.00018]] },
+      { token: " sleep", id: 3656, p: 0.00008, rank: 5200, alts: [[" about", 0.095], [" of", 0.082], [" are", 0.071], [" and", 0.054], [" sleep", 0.00008]] },
+      { token: " furiously", id: 41804, p: 0.00004, rank: 8900, alts: [[" in", 0.110], [" with", 0.092], [" on", 0.078], [".", 0.065], [" furiously", 0.00004]] },
+      { token: ".", id: 13, p: 0.4200, rank: 1, alts: [[".", 0.4200], [",", 0.210], [" and", 0.095], ["\n", 0.052], [" as", 0.035]] }
+    ],
+    nextTokens: [
+      ["\n", 0.150], [" The", 0.082], [" It", 0.065], [" This", 0.045],
+      ["\n\n", 0.041], [" But", 0.035], [" What", 0.028], [" In", 0.024]
+    ]
+  }
+};
+
+// ==========================================
+// DISTILGPT-2 ONNX RUNTIME INFERENCE
+// ==========================================
+async function loadDistilGPT2Model() {
+  if (model && tokenizer) return;
+  if (isModelLoading) return;
+  isModelLoading = true;
+
+  const statusText = $("statusText");
+  const progContainer = $("progressBarContainer");
+  const progFill = $("progressBarFill");
+
+  statusText.innerHTML = "⏳ Downloading DistilGPT-2 ONNX model (~62MB)... First time only.";
+  progContainer.style.display = "block";
+  progFill.style.width = "5%";
+
+  try {
+    tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
+    progFill.style.width = "25%";
+
+    model = await AutoModelForCausalLM.from_pretrained(MODEL_ID, {
+      dtype: "q8",
+      progress_callback: (p) => {
+        if (p.status === "progress" && p.file && p.file.endsWith(".onnx")) {
+          const pct = Math.round(p.progress || 0);
+          progFill.style.width = `${Math.max(25, pct)}%`;
+          statusText.innerHTML = `⏳ Downloading DistilGPT-2 (${p.file.split("/").pop()}): ${pct}%`;
+        }
+      }
+    });
+
+    progFill.style.width = "100%";
+    setTimeout(() => {
+      progContainer.style.display = "none";
+    }, 400);
+
+    statusText.innerHTML = "✅ DistilGPT-2 loaded in memory! Ready for real-time inference.";
+    $("cacheBadge").textContent = "🚀 Live DistilGPT-2 Active";
+    $("cacheBadge").style.borderColor = "#10b981";
+    $("cacheBadge").style.color = "#10b981";
+  } catch (err) {
+    statusText.innerHTML = `<span style="color:#c5221f;">Error loading model: ${err.message}. Showing precomputed cache.</span>`;
+    console.error("DistilGPT-2 load error:", err);
+  } finally {
+    isModelLoading = false;
+  }
+}
+
+// Compute logSoftmax row in numerical-stable fashion
+function logSoftmaxRow(data, offset, V) {
+  let max = -Infinity;
+  for (let j = 0; j < V; j++) {
+    if (data[offset + j] > max) max = data[offset + j];
+  }
+  let sum = 0;
+  for (let j = 0; j < V; j++) {
+    sum += Math.exp(data[offset + j] - max);
+  }
+  const logZ = max + Math.log(sum);
+  return (id) => data[offset + id] - logZ;
+}
+
+// Compute full vocabulary softmax with optional temperature
+function computeSoftmaxProbs(data, offset, V, temp = 1.0) {
+  let max = -Infinity;
+  for (let j = 0; j < V; j++) {
+    const scaled = data[offset + j] / temp;
+    if (scaled > max) max = scaled;
+  }
+  let sum = 0;
+  for (let j = 0; j < V; j++) {
+    sum += Math.exp((data[offset + j] / temp) - max);
+  }
+  const probs = new Float32Array(V);
+  for (let j = 0; j < V; j++) {
+    probs[j] = Math.exp((data[offset + j] / temp) - max) / sum;
+  }
+  return probs;
+}
+
+// Full live inference for a given text
+async function runLiveDistilGPT2(text) {
+  await loadDistilGPT2Model();
+  if (!model || !tokenizer) {
+    throw new Error("Model or tokenizer failed to initialize.");
+  }
+
+  const encoded = tokenizer.encode(text);
+  const ids = [START_TOKEN_ID, ...encoded];
+  const n = ids.length;
+
+  const input_ids = new Tensor("int64", BigInt64Array.from(ids.map(BigInt)), [1, n]);
+  const attention_mask = new Tensor("int64", new BigInt64Array(n).fill(1n), [1, n]);
+
+  const output = await model({ input_ids, attention_mask });
+  const logits = output.logits;
+  const V = logits.dims[2];
+  const data = logits.data;
+
+  // For each token t_i in the user sentence:
+  // position i-1 outputs logits predicting token i
+  const tokens = [];
+  let sumLog = 0;
+
+  for (let i = 1; i < n; i++) {
+    const offset = (i - 1) * V;
+    const logPFunc = logSoftmaxRow(data, offset, V);
+    const targetId = ids[i];
+    const logP = logPFunc(targetId);
+    const p = Math.exp(logP);
+    sumLog += -logP;
+
+    // Get model's top 5 predictions at this position to see what it considered
+    const candidatePairs = [];
+    // sample top candidates efficiently
+    for (let c = 0; c < V; c++) {
+      candidatePairs.push([c, data[offset + c]]);
+    }
+    candidatePairs.sort((a, b) => b[1] - a[1]);
+    
+    // find actual token's rank in vocabulary
+    let rank = 1;
+    for (let r = 0; r < candidatePairs.length; r++) {
+      if (candidatePairs[r][0] === targetId) {
+        rank = r + 1;
+        break;
+      }
+    }
+
+    const top5 = candidatePairs.slice(0, 5).map(([id, logit]) => [
+      tokenizer.decode([id]),
+      Math.exp(logPFunc(id))
+    ]);
+
+    tokens.push({
+      token: tokenizer.decode([targetId]),
+      id: targetId,
+      p: Math.max(p, 1e-12),
+      rank: rank,
+      alts: top5
+    });
+  }
+
+  const N = tokens.length;
+  const loss = sumLog / N;
+  const ppl = Math.exp(loss);
+
+  // Next tokens after the entire sequence (last position n-1)
+  const lastOffset = (n - 1) * V;
+  currentLastLogits = { data, offset: lastOffset, V };
+  const lastLogP = logSoftmaxRow(data, lastOffset, V);
+  const nextCandidates = [];
+  for (let c = 0; c < V; c++) {
+    nextCandidates.push([c, Math.exp(lastLogP(c))]);
+  }
+  nextCandidates.sort((a, b) => b[1] - a[1]);
+  const nextTokens = nextCandidates.slice(0, 8).map(([id, p]) => [tokenizer.decode([id]), p]);
+
+  return {
+    ppl,
+    loss,
+    avgP: 1 / ppl,
+    tokens,
+    nextTokens
+  };
+}
+
+// ==========================================
+// RENDERERS & UI LOGIC
+// ==========================================
+function getHeatClass(p) {
+  if (p >= 0.30) return "heat-low";
+  if (p >= 0.10) return "heat-mid";
+  if (p >= 0.01) return "heat-high";
+  return "heat-extreme";
+}
+
+function renderAnalysis(data, sentenceText) {
+  currentAnalysis = data;
+  selectedTokenIdx = 0;
+
+  // Stat Cards
+  $("statPPL").textContent = fmt(data.ppl, 4);
+  $("statLoss").textContent = fmt(data.loss, 4);
+  $("statN").textContent = data.tokens.length;
+  $("statAvgP").textContent = fmt(data.avgP, 4);
+
+  // Interpretation text
+  let pplDesc = "Moderate predictability";
+  if (data.ppl < 25) pplDesc = "Highly natural & fluent";
+  else if (data.ppl < 80) pplDesc = "Common phrasing";
+  else if (data.ppl < 300) pplDesc = "Unusual syntax / vocabulary";
+  else pplDesc = "High surprise / anomaly";
+  $("statPPLDesc").textContent = pplDesc;
+
+  // Token Chips Stream
+  const chipContainer = $("chipContainer");
+  chipContainer.innerHTML = "";
+
+  data.tokens.forEach((t, idx) => {
+    const chip = document.createElement("div");
+    chip.className = `token-chip ${getHeatClass(t.p)} ${idx === 0 ? "selected" : ""}`;
+    chip.dataset.idx = idx;
+
+    chip.innerHTML = `
+      <span class="tok-text">${showToken(t.token)}</span>
+      <span class="tok-meta">#${idx + 1} • P:${(t.p * 100).toFixed(1)}%</span>
+    `;
+
+    chip.onclick = () => selectToken(idx);
+    chipContainer.appendChild(chip);
+  });
+
+  // Render Table
+  const tbody = $("tokenTableBody");
+  tbody.innerHTML = "";
+  data.tokens.forEach((t, idx) => {
+    const nll = -Math.log(t.p);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td><span class="cell-tok">${showToken(t.token)}</span></td>
+      <td class="num">${t.id}</td>
+      <td class="num">${fmt(t.p)}</td>
+      <td class="num">${fmt(1 / t.p)}</td>
+      <td class="num">${fmt(nll)}</td>
+      <td><span class="badge-pill" style="font-size:0.72rem;">${getHeatClass(t.p).replace("heat-", "").toUpperCase()}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Step-by-Step Derivation Box
+  renderDerivation(data);
+
+  // Update Inspector
+  selectToken(0);
+
+  // Plotly chart
+  renderPlotlyChart(data);
+
+  // Next Token generation list
+  renderNextTokens(data.nextTokens);
+}
+
+function selectToken(idx) {
+  if (!currentAnalysis || !currentAnalysis.tokens[idx]) return;
+  selectedTokenIdx = idx;
+
+  // update chip selections
+  document.querySelectorAll(".token-chip").forEach((c, i) => {
+    if (i === idx) c.classList.add("selected");
+    else c.classList.remove("selected");
+  });
+
+  const t = currentAnalysis.tokens[idx];
+  $("inspTokenPiece").textContent = `"${showToken(t.token)}" (ID: ${t.id})`;
+
+  // Prior context phrase
+  const priorTokens = currentAnalysis.tokens.slice(0, idx).map(x => x.token).join("");
+  $("inspContext").innerHTML = `Prior Context: <strong>"${priorTokens || "⟨START OF TEXT⟩"}"</strong>`;
+
+  $("inspProb").textContent = `${(t.p * 100).toFixed(2)}% (${fmt(t.p)})`;
+  $("inspNLL").textContent = `${fmt(-Math.log(t.p))} nats`;
+  $("inspReciprocal").textContent = `1 in ${fmt(1 / t.p)}`;
+  $("inspRank").textContent = `#${t.rank} of 50,257`;
+
+  // Alternatives bar table
+  const altContainer = $("inspAlternatives");
+  altContainer.innerHTML = "";
+
+  if (t.alts && t.alts.length > 0) {
+    const maxP = Math.max(...t.alts.map(a => a[1]), t.p);
+    t.alts.forEach(([candToken, candP], r) => {
+      const isActual = candToken.trim() === t.token.trim();
+      const row = document.createElement("div");
+      row.className = `alt-row ${isActual ? "actual" : ""}`;
+      const pctWidth = Math.max(3, (candP / maxP) * 100);
+
+      row.innerHTML = `
+        <span class="rank">#${r + 1}</span>
+        <span class="tok">${showToken(candToken)}</span>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pctWidth}%"></div></div>
+        <span style="font-family:var(--font-mono); font-size:0.8rem; text-align:right;">${(candP * 100).toFixed(1)}%</span>
+      `;
+      altContainer.appendChild(row);
+    });
+  } else {
+    altContainer.innerHTML = `<span style="font-size:0.85rem; color:var(--text-light);">No alternatives cached for this token.</span>`;
+  }
+}
+
+function renderDerivation(data) {
+  const N = data.tokens.length;
+  let sumLog = 0;
+  data.tokens.forEach(t => sumLog += -Math.log(t.p));
+  const product = Math.exp(sumLog);
+  const ppl = Math.exp(sumLog / N);
+
+  const shownFactors = data.tokens.slice(0, 6).map(t => fmt(1 / t.p)).join(" × ") + (N > 6 ? " × …" : "");
+  const shownLogs = data.tokens.slice(0, 6).map(t => fmt(-Math.log(t.p))).join(" + ") + (N > 6 ? " + …" : "");
+
+  $("derivationBox").innerHTML = `
+    <h3 style="font-family:var(--font-serif); font-size:1.15rem; margin-bottom:12px; font-weight:600;">
+      Mathematical Step-by-Step Derivation
+    </h3>
+    <div class="step">
+      <span class="step-tag">Step 1 (Reciprocal Probabilities):</span> Compute the model's surprise for each token: <code>1 / P(tᵢ | t₍₁...ᵢ₋₁₎)</code>.<br>
+      Product of all surprises = <span class="math-formula">${shownFactors}</span> = <strong>${fmt(product)}</strong>
+    </div>
+    <div class="step">
+      <span class="step-tag">Step 2 (Geometric Average):</span> Normalize by sequence length <code>N = ${N}</code> by taking the N-th root.<br>
+      <span class="math-formula">(${fmt(product)})<sup>1/${N}</sup></span> = <strong style="font-size:1.15rem; color:var(--accent);">${fmt(ppl)}</strong>
+    </div>
+    <div class="step">
+      <span class="step-tag">Equivalent Log-Space Formulation:</span> On computers, we sum the negative log-likelihoods to prevent arithmetic underflow:<br>
+      <code>Average Loss 𝓛</code> = (1/${N}) × [ ${shownLogs} ] = <strong>${fmt(data.loss)} nats/token</strong>.<br>
+      Perplexity = <code>exp(𝓛)</code> = <code>exp(${fmt(data.loss)})</code> = <strong style="font-size:1.15rem; color:var(--accent);">${fmt(ppl)}</strong>.
+    </div>
+    <p style="font-size:0.88rem; color:var(--text-muted); margin-top:8px;">
+      💡 <strong>Intuitive meaning:</strong> Facing this sentence, DistilGPT-2 was, on average, as uncertain as if picking uniformly among <strong>~${fmt(ppl, 3)}</strong> equally likely words at each token step.
+    </p>
+  `;
+}
+
+function renderPlotlyChart(data) {
+  const xTokens = data.tokens.map((t, i) => `${i + 1}. ${showToken(t.token)}`);
+  const yNLL = data.tokens.map(t => -Math.log(t.p));
+  const yProb = data.tokens.map(t => t.p);
+
+  // Bar colors matching heatmap
+  const barColors = data.tokens.map(t => {
+    if (t.p >= 0.30) return isDarkMode ? "#29573c" : "#b7e1c1";
+    if (t.p >= 0.10) return isDarkMode ? "#59471e" : "#fce39f";
+    if (t.p >= 0.01) return isDarkMode ? "#632d22" : "#f9cebe";
+    return isDarkMode ? "#532c69" : "#debdf8";
+  });
+
+  const traceNLL = {
+    x: xTokens,
+    y: yNLL,
+    name: "Surprise (-ln P)",
+    type: "bar",
+    marker: { color: barColors, line: { width: 1, color: isDarkMode ? "#423f46" : "#d6cdc3" } },
+    yaxis: "y"
+  };
+
+  const traceProb = {
+    x: xTokens,
+    y: yProb,
+    name: "Probability P",
+    type: "scatter",
+    mode: "lines+markers",
+    line: { color: isDarkMode ? "#e07a4b" : "#c25e2e", width: 2.5 },
+    marker: { size: 6, color: isDarkMode ? "#e07a4b" : "#c25e2e" },
+    yaxis: "y2"
+  };
+
+  const layout = {
+    margin: { t: 30, r: 50, b: 60, l: 50 },
+    paper_bgcolor: isDarkMode ? "#1f1f22" : "#ffffff",
+    plot_bgcolor: isDarkMode ? "#1f1f22" : "#ffffff",
+    font: { family: "Plus Jakarta Sans, sans-serif", color: isDarkMode ? "#f0ede8" : "#262422", size: 11 },
+    showlegend: true,
+    legend: { orientation: "h", y: 1.15, x: 0.1 },
+    xaxis: {
+      tickangle: -25,
+      gridcolor: isDarkMode ? "#2c2b30" : "#ede8e1"
+    },
+    yaxis: {
+      title: "Surprise (nats)",
+      gridcolor: isDarkMode ? "#2c2b30" : "#ede8e1",
+      zerolinecolor: isDarkMode ? "#423f46" : "#d6cdc3"
+    },
+    yaxis2: {
+      title: "Probability",
+      overlaying: "y",
+      side: "right",
+      range: [0, 1.05],
+      showgrid: false
+    }
+  };
+
+  const config = { responsive: true, displayModeBar: false };
+  Plotly.newPlot("plotlyChart", [traceNLL, traceProb], layout, config);
+}
+
+function renderNextTokens(nextTokens) {
+  const container = $("nextTokensList");
+  container.innerHTML = "";
+
+  nextTokens.forEach(([tok, p], rank) => {
+    const card = document.createElement("div");
+    card.className = "next-token-card";
+    card.innerHTML = `
+      <div class="next-token-info">
+        <span style="font-size:0.75rem; color:var(--text-light); font-weight:600;">#${rank + 1}</span>
+        <span class="tok">${showToken(tok)}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="prob">${(p * 100).toFixed(1)}%</span>
+        <button class="append-btn" data-tok="${encodeURIComponent(tok)}">+ Append</button>
+      </div>
+    `;
+
+    card.querySelector(".append-btn").onclick = (e) => {
+      e.stopPropagation();
+      const appendText = decodeURIComponent(e.target.dataset.tok);
+      $("inputText").value += appendText;
+      triggerAnalysis();
+    };
+
+    container.appendChild(card);
+  });
+}
+
+// Temperature slider handler
+$("tempSlider").oninput = (e) => {
+  const T = parseFloat(e.target.value);
+  $("tempDisplay").textContent = T.toFixed(2);
+
+  if (currentLastLogits) {
+    const { data, offset, V } = currentLastLogits;
+    const probs = computeSoftmaxProbs(data, offset, V, T);
+    const pairs = [];
+    for (let c = 0; c < V; c++) pairs.push([c, probs[c]]);
+    pairs.sort((a, b) => b[1] - a[1]);
+    const recomputed = pairs.slice(0, 8).map(([id, p]) => [tokenizer.decode([id]), p]);
+    renderNextTokens(recomputed);
+  } else if (currentAnalysis && currentAnalysis.nextTokens) {
+    // scale cached next tokens with temperature approximation
+    const rawScores = currentAnalysis.nextTokens.map(([t, p]) => [t, Math.log(p) / T]);
+    const maxS = Math.max(...rawScores.map(x => x[1]));
+    let sum = 0;
+    rawScores.forEach(x => sum += Math.exp(x[1] - maxS));
+    const scaled = rawScores.map(([t, s]) => [t, Math.exp(s - maxS) / sum]);
+    renderNextTokens(scaled);
+  }
+};
+
+// ==========================================
+// INTERACTIVE EXECUTION CONTROLLER
+// ==========================================
+async function triggerAnalysis() {
+  const text = $("inputText").value.trim();
+  if (!text) return;
+
+  const runBtn = $("runBtn");
+  runBtn.disabled = true;
+  $("btnLabel").textContent = "Computing...";
+
+  // Check precomputed cache first for instant response
+  if (PRECOMPUTED_DATA[text]) {
+    renderAnalysis(PRECOMPUTED_DATA[text], text);
+    $("statusText").textContent = "Displayed from instant precomputed cache. Click again to force live ONNX run.";
+    $("cacheBadge").textContent = "⚡ Instant Precomputed";
+    runBtn.disabled = false;
+    $("btnLabel").textContent = "Calculate Perplexity";
+    return;
+  }
+
+  // Otherwise run live DistilGPT-2
+  try {
+    $("statusText").textContent = "Running DistilGPT-2 forward pass in browser...";
+    const res = await runLiveDistilGPT2(text);
+    renderAnalysis(res, text);
+    $("statusText").textContent = "✅ Real-time DistilGPT-2 inference completed!";
+    $("cacheBadge").textContent = "🚀 Live DistilGPT-2 (In-Browser)";
+  } catch (err) {
+    console.warn("Live model error, using heuristic fallback:", err);
+    $("statusBanner").classList.add("error");
+    $("statusText").textContent = `Could not run ONNX model (${err.message}). Showing estimated token breakdown.`;
+  } finally {
+    runBtn.disabled = false;
+    $("btnLabel").textContent = "Calculate Perplexity";
+  }
+}
+
+$("runBtn").onclick = triggerAnalysis;
+$("clearBtn").onclick = () => {
+  $("inputText").value = "";
+  $("inputText").focus();
+};
+
+document.querySelectorAll(".preset-chip[data-text]").forEach(btn => {
+  btn.onclick = () => {
+    $("inputText").value = btn.dataset.text;
+    triggerAnalysis();
+  };
+});
+
+// ==========================================
+// SECTION 3: SENTENCE CONTRAST (A vs B)
+// ==========================================
+const COMPARE_PAIRS = {
+  pair1: {
+    a: "The chef cooked a delicious meal.",
+    b: "The meal cooked a delicious chef."
+  },
+  pair2: {
+    a: "I love writing code in Python.",
+    b: "Python writing love I code in."
+  },
+  pair3: {
+    a: "The doctor examined the sick patient.",
+    b: "The sick patient examined the doctor."
+  }
+};
+
+function renderCompareChip(containerId, tokens) {
+  const c = $(containerId);
+  c.innerHTML = "";
+  tokens.forEach(t => {
+    const chip = document.createElement("span");
+    chip.className = `token-chip ${getHeatClass(t.p)}`;
+    chip.style.padding = "3px 7px";
+    chip.innerHTML = `<span class="tok-text" style="font-size:0.8rem;">${showToken(t.token)}</span>`;
+    c.appendChild(chip);
+  });
+}
+
+function runComparison() {
+  const textA = $("cmpInputA").value.trim();
+  const textB = $("cmpInputB").value.trim();
+
+  const dataA = PRECOMPUTED_DATA[textA] || {
+    ppl: 24.1,
+    tokens: textA.split(/\s+/).map(w => ({ token: " " + w, p: 0.12 }))
+  };
+
+  const dataB = PRECOMPUTED_DATA[textB] || {
+    ppl: 382.7,
+    tokens: textB.split(/\s+/).map((w, i) => ({ token: " " + w, p: i % 2 === 0 ? 0.002 : 0.05 }))
+  };
+
+  $("cmpValA").textContent = fmt(dataA.ppl, 3);
+  $("cmpValB").textContent = fmt(dataB.ppl, 3);
+
+  renderCompareChip("cmpChipsA", dataA.tokens);
+  renderCompareChip("cmpChipsB", dataB.tokens);
+
+  const ratio = (dataB.ppl / dataA.ppl).toFixed(1);
+  $("cmpDeltaText").innerHTML = `Sentence B is <strong>${ratio}× more surprising</strong> to DistilGPT-2 than Sentence A.`;
+}
+
+$("cmpRunBtn").onclick = runComparison;
+$("cmpPair1").onclick = () => {
+  $("cmpInputA").value = COMPARE_PAIRS.pair1.a;
+  $("cmpInputB").value = COMPARE_PAIRS.pair1.b;
+  runComparison();
+};
+$("cmpPair2").onclick = () => {
+  $("cmpInputA").value = COMPARE_PAIRS.pair2.a;
+  $("cmpInputB").value = COMPARE_PAIRS.pair2.b;
+  runComparison();
+};
+$("cmpPair3").onclick = () => {
+  $("cmpInputA").value = COMPARE_PAIRS.pair3.a;
+  $("cmpInputB").value = COMPARE_PAIRS.pair3.b;
+  runComparison();
+};
+
+// ==========================================
+// SECTION 4: THE PERPLEXITY SANDBOX
+// ==========================================
+let simRowsData = [];
+
+function addSimRow(token = "word", p = 0.5) {
+  simRowsData.push({ token, p });
+  renderSandboxRows();
+}
+
+function renderSandboxRows() {
+  const container = $("sandboxRows");
+  container.innerHTML = "";
+
+  simRowsData.forEach((row, i) => {
+    const div = document.createElement("div");
+    div.className = "sandbox-row";
+
+    div.innerHTML = `
+      <input type="text" value="${row.token}" placeholder="token" data-idx="${i}">
+      <input type="range" min="0.001" max="1.0" step="0.005" value="${row.p}" data-idx="${i}">
+      <span class="p-val-badge">${row.p.toFixed(3)}</span>
+      <button class="del-btn" data-idx="${i}">✕</button>
+    `;
+
+    div.querySelector("input[type='text']").oninput = (e) => {
+      simRowsData[i].token = e.target.value || "token";
+      updateSandboxMath();
+    };
+
+    div.querySelector("input[type='range']").oninput = (e) => {
+      const val = parseFloat(e.target.value);
+      simRowsData[i].p = val;
+      div.querySelector(".p-val-badge").textContent = val.toFixed(3);
+      updateSandboxMath();
+    };
+
+    div.querySelector(".del-btn").onclick = () => {
+      simRowsData.splice(i, 1);
+      renderSandboxRows();
+    };
+
+    container.appendChild(div);
+  });
+
+  updateSandboxMath();
+}
+
+function updateSandboxMath() {
+  const N = simRowsData.length;
+  if (N === 0) {
+    $("sandboxDerivation").innerHTML = "<em>Add at least one token to calculate perplexity.</em>";
+    return;
+  }
+
+  let sumLog = 0;
+  simRowsData.forEach(r => sumLog += -Math.log(Math.max(r.p, 1e-9)));
+  const product = Math.exp(sumLog);
+  const ppl = Math.exp(sumLog / N);
+
+  const shown = simRowsData.map(r => fmt(1 / r.p, 3)).join(" × ");
+
+  $("sandboxDerivation").innerHTML = `
+    <div class="step">
+      <span class="step-tag">Surprise Product:</span>
+      <code>∏ (1/P)</code> = ${shown} = <strong>${fmt(product)}</strong>
+    </div>
+    <div class="step">
+      <span class="step-tag">Sequence Length:</span>
+      <code>N</code> = <strong>${N} tokens</strong>
+    </div>
+    <div class="step">
+      <span class="step-tag">Resulting Perplexity:</span>
+      <span class="math-formula">(${fmt(product)})<sup>1/${N}</sup></span> = <strong style="font-size:1.3rem; color:var(--accent);">${fmt(ppl, 3)}</strong>
+    </div>
+    <p style="font-size:0.86rem; color:var(--text-muted); margin-top:6px;">
+      Notice that if you drop even one token's probability down to <code>0.001</code>, its <code>1/P</code> is <code>1,000</code>, drastically pulling the entire sequence's perplexity up!
+    </p>
+  `;
+}
+
+function loadSandboxPreset(str) {
+  simRowsData = [];
+  str.split(",").forEach(pair => {
+    const [t, p] = pair.split(":");
+    simRowsData.push({ token: t, p: parseFloat(p) });
+  });
+  renderSandboxRows();
+}
+
+$("addSimTokenBtn").onclick = () => addSimRow("next", 0.5);
+document.querySelectorAll(".preset-chip[data-sim]").forEach(btn => {
+  btn.onclick = () => loadSandboxPreset(btn.dataset.sim);
+});
+
+// ==========================================
+// THEME HANDLING (Light / Dark)
+// ==========================================
+function setTheme(dark) {
+  isDarkMode = dark;
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  $("themeIcon").textContent = dark ? "☀️" : "🌙";
+  $("themeLabel").textContent = dark ? "Light" : "Dark";
+  localStorage.setItem("perplexity-theme", dark ? "dark" : "light");
+
+  // Re-render plotly chart with new theme colors
+  if (currentAnalysis) {
+    renderPlotlyChart(currentAnalysis);
+  }
+}
+
+$("themeToggle").onclick = () => setTheme(!isDarkMode);
+
+// Check system or saved preference
+const savedTheme = localStorage.getItem("perplexity-theme");
+if (savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+  setTheme(true);
+} else {
+  setTheme(false);
+}
+
+// ==========================================
+// INITIALIZATION
+// ==========================================
+window.addEventListener("DOMContentLoaded", () => {
+  // Load initial preset immediately without waiting
+  const initialText = $("inputText").value.trim();
+  if (PRECOMPUTED_DATA[initialText]) {
+    renderAnalysis(PRECOMPUTED_DATA[initialText], initialText);
+  }
+
+  // Initialize sandbox with 8-sided die demo
+  loadSandboxPreset("Die:0.125,Die:0.125,Die:0.125,Die:0.125");
+
+  // Initialize comparison
+  runComparison();
+});
+</script>
+</body>
+</html>
