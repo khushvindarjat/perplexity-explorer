@@ -90,7 +90,7 @@ npx serve .
 
 Then open your browser to:
 ```
-http://localhost:8000/Index.html
+http://localhost:8000/index.html
 ```
 
 ---
@@ -99,6 +99,6 @@ http://localhost:8000/Index.html
 
 ```
 perplexity explorer/
-├── Index.html     # Self-contained web application (HTML, CSS, JS, ONNX & Plotly integration)
+├── index.html     # Self-contained web application (HTML, CSS, JS, ONNX & Plotly integration)
 └── Readme.md      # Documentation and mathematical reference
 ```
